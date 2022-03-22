@@ -1,15 +1,16 @@
-import { DomainName, HexString, UNIXTime } from "../../types"
-import { EVMNetwork } from "../../networks"
-import { normalizeEVMAddress, sameEVMAddress } from "../../lib/utils"
-import { ETHEREUM } from "../../constants/networks"
-import { getTokenMetadata } from "../../lib/erc721"
+import {DomainName, HexString, UNIXTime} from "../../types"
+import {EVMNetwork} from "../../networks"
+import {normalizeEVMAddress, sameEVMAddress} from "../../lib/utils"
+import {ETHEREUM} from "../../constants/networks"
+import {getTokenMetadata} from "../../lib/erc721"
 
-import { ServiceCreatorFunction, ServiceLifecycleEvents } from "../types"
+import {ServiceCreatorFunction, ServiceLifecycleEvents} from "../types"
 import BaseService from "../base"
 import ChainService from "../chain"
 import logger from "../../lib/logger"
-import { AddressOnNetwork } from "../../accounts"
-import { SECOND } from "../../constants"
+import {AddressOnNetwork} from "../../accounts"
+import {SECOND} from "../../constants"
+import {IdrissCrypto} from "idriss-crypto/lib/browser";
 
 type ResolvedAddressRecord = {
   from: {
@@ -18,7 +19,7 @@ type ResolvedAddressRecord = {
   resolved: {
     addressNetwork: AddressOnNetwork
   }
-  system: "ENS" | "UNS"
+  system: "ENS" | "UNS" | "Idriss"
 }
 
 type ResolvedNameRecord = {
@@ -107,11 +108,9 @@ export default class NameService extends BaseService<Events> {
    * @param chainService - Required for chain interactions.
    * @returns A new, initializing ChainService
    */
-  static create: ServiceCreatorFunction<
-    Events,
+  static create: ServiceCreatorFunction<Events,
     NameService,
-    [Promise<ChainService>]
-  > = async (chainService) => {
+    [Promise<ChainService>]> = async (chainService) => {
     return new this(await chainService)
   }
 
@@ -120,7 +119,7 @@ export default class NameService extends BaseService<Events> {
 
     chainService.emitter.on(
       "newAccountToTrack",
-      async ({ address, network }) => {
+      async ({address, network}) => {
         try {
           await this.lookUpName(address, network)
         } catch (error) {
@@ -131,17 +130,17 @@ export default class NameService extends BaseService<Events> {
     this.emitter.on(
       "resolvedName",
       async ({
-        from: {
-          addressNetwork: { address, network },
-        },
-      }) => {
+               from: {
+                 addressNetwork: {address, network},
+               },
+             }) => {
         try {
           const avatar = await this.lookUpAvatar(address, network)
 
           if (avatar) {
             this.emitter.emit("resolvedAvatar", {
-              from: { addressNetwork: { address, network } },
-              resolved: { avatar },
+              from: {addressNetwork: {address, network}},
+              resolved: {avatar},
               system: "ENS",
             })
           }
@@ -171,8 +170,8 @@ export default class NameService extends BaseService<Events> {
     }
     const normalized = normalizeEVMAddress(address)
     this.emitter.emit("resolvedAddress", {
-      from: { name },
-      resolved: { addressNetwork: { address: normalized, network: ETHEREUM } },
+      from: {name},
+      resolved: {addressNetwork: {address: normalized, network: ETHEREUM}},
       system: "ENS",
     })
     return normalized
@@ -181,16 +180,15 @@ export default class NameService extends BaseService<Events> {
   async lookUpIdrissAddress(
     name: DomainName
   ): Promise<HexString | undefined> {
-    console.log('lookUpIdrissAddress')
-//todo
-    const address = "0x65406540"
+    const response = await (new IdrissCrypto()).resolve(name, {network: "evm"})
+    const address = Object.values(response)[0];
     if (!address || !address.match(/^0x[a-zA-Z0-9]*$/)) {
       return undefined
     }
     const normalized = normalizeEVMAddress(address)
     this.emitter.emit("resolvedAddress", {
-      from: { name },
-      resolved: { addressNetwork: { address: "0x12341234", network: ETHEREUM } },
+      from: {name},
+      resolved: {addressNetwork: {address: normalized, network: ETHEREUM}},
       system: "Idriss",
     })
     return normalized
@@ -208,7 +206,7 @@ export default class NameService extends BaseService<Events> {
 
     if (checkCache && address in this.cachedResolvedNames) {
       const {
-        resolved: { name, expiresAt },
+        resolved: {name, expiresAt},
       } = this.cachedResolvedNames[address]
 
       if (expiresAt >= Date.now()) {
@@ -233,7 +231,7 @@ export default class NameService extends BaseService<Events> {
     }
 
     const nameRecord = {
-      from: { addressNetwork: { address, network } },
+      from: {addressNetwork: {address, network}},
       resolved: {
         name,
         // TODO Read this from the name service; for now, this avoids infinite
@@ -295,7 +293,7 @@ export default class NameService extends BaseService<Events> {
           )
 
           if (metadata && metadata.image) {
-            const { image } = metadata
+            const {image} = metadata
             const resolvedGateway = storageGatewayURL(new URL(image))
             this.cachedEIP155AvatarURLs[avatar] = resolvedGateway
             return resolvedGateway

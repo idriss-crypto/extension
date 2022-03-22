@@ -28,7 +28,7 @@ export const { setResolvedAddress } = resolveIdrissAddressSlice.actions
 export default resolveIdrissAddressSlice.reducer
 
 export const resolveIdrissAddress = createBackgroundAsyncThunk(
-  "domain/resolveDomainAddress",
+  "idriss/resolveIdrissAddress",
   async (nameNetwork: NameOnNetwork, { dispatch, extra: { main } }) => {
     const address = await main.resolveIdrissAddress(nameNetwork)
     if (address) {

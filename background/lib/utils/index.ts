@@ -153,3 +153,7 @@ export const hexToAscii = (hex_: string): string => {
     str += String.fromCharCode(parseInt(hex.substr(i, 2), 16))
   return str.replace("\x00", "")
 }
+
+export const checkIfStringIsValidIdrissName = (s: string): boolean => {
+  return IdrissCrypto.matchInput(s) !== null;
+};

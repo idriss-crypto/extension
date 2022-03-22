@@ -34,11 +34,9 @@ import SharedSlideUpMenu from "../components/Shared/SharedSlideUpMenu"
 import FeeSettingsButton from "../components/NetworkFees/FeeSettingsButton"
 import {checkIfStringIsValidIdrissName} from "@tallyho/tally-background/lib/utils";
 import { ETHEREUM } from "@tallyho/tally-background/constants/networks"
-import {setResolvedAddress} from "@tallyho/tally-background/redux-slices/idriss-resolver";
 import selectResolvedIdrissAddress from "@tallyho/tally-background/redux-slices/selectors/idrissSelectors";
 import {
-  resolveIdrissAddress,
-  setResolvedIdrissAddress,
+  resolveIdrissAddress, setResolvedAddress
 } from "@tallyho/tally-background/redux-slices/idriss-resolver"
 
 export default function Send(): ReactElement {
@@ -67,7 +65,6 @@ export default function Send(): ReactElement {
           name: trimmedAddress,
           network: ETHEREUM,
         }
-        // try to resolve the domain
         dispatch(resolveIdrissAddress(nameNetwork))
       } else if (isAddress(trimmedAddress)) {
         setDestinationAddress(trimmedAddress)
@@ -79,7 +76,6 @@ export default function Send(): ReactElement {
   )
 
   useEffect(() => {
-    console.log({resolvedIdrissAddress})
     if (resolvedIdrissAddress.address) {
       if (isAddress(resolvedIdrissAddress.address)) {
         // Set the destination address
