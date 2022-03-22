@@ -1,4 +1,4 @@
-import React, { ReactElement, useState } from "react"
+import React, { ReactElement, useCallback, useEffect, useState } from "react"
 import { isAddress } from "@ethersproject/address"
 import {
   selectCurrentAccount,
@@ -32,6 +32,14 @@ import SharedButton from "../components/Shared/SharedButton"
 import { useBackgroundDispatch, useBackgroundSelector } from "../hooks"
 import SharedSlideUpMenu from "../components/Shared/SharedSlideUpMenu"
 import FeeSettingsButton from "../components/NetworkFees/FeeSettingsButton"
+import {checkIfStringIsValidIdrissName} from "@tallyho/tally-background/lib/utils";
+import { ETHEREUM } from "@tallyho/tally-background/constants/networks"
+import {setResolvedAddress} from "@tallyho/tally-background/redux-slices/idriss-resolver";
+import selectResolvedIdrissAddress from "@tallyho/tally-background/redux-slices/selectors/idrissSelectors";
+import {
+  resolveIdrissAddress,
+  setResolvedIdrissAddress,
+} from "@tallyho/tally-background/redux-slices/idriss-resolver"
 
 export default function Send(): ReactElement {
   const [selectedAsset, setSelectedAsset] = useState<FungibleAsset>(ETH)
@@ -48,6 +56,41 @@ export default function Send(): ReactElement {
   const currentAccount = useBackgroundSelector(selectCurrentAccount)
   const balanceData = useBackgroundSelector(selectCurrentAccountBalances)
   const mainCurrencySymbol = useBackgroundSelector(selectMainCurrencySymbol)
+  const resolvedIdrissAddress = useBackgroundSelector(selectResolvedIdrissAddress)
+
+  // On changing the input text, resolve the domain name if entered
+  const handleAddressInputChange = useCallback(
+    (value: string) => {
+      const trimmedAddress = value.trim()
+      if (checkIfStringIsValidIdrissName(trimmedAddress)) {
+        const nameNetwork = {
+          name: trimmedAddress,
+          network: ETHEREUM,
+        }
+        // try to resolve the domain
+        dispatch(resolveIdrissAddress(nameNetwork))
+      } else if (isAddress(trimmedAddress)) {
+        setDestinationAddress(trimmedAddress)
+      } else {
+        setHasError(true)
+      }
+    },
+    [dispatch]
+  )
+
+  useEffect(() => {
+    console.log({resolvedIdrissAddress})
+    if (resolvedIdrissAddress.address) {
+      if (isAddress(resolvedIdrissAddress.address)) {
+        // Set the destination address
+        setDestinationAddress(resolvedIdrissAddress.address)
+        // Clear the error flag
+        setHasError(false)
+        // Reset the resolved address to an empty string
+        dispatch(setResolvedAddress(""))
+      }
+    }
+  }, [dispatch, resolvedIdrissAddress.address])
 
   const fungibleAssetAmounts =
     // Only look at fungible assets.
@@ -143,7 +186,7 @@ export default function Send(): ReactElement {
               type="text"
               placeholder="0x..."
               spellCheck={false}
-              onChange={(event) => setDestinationAddress(event.target.value)}
+              onChange={(event) => handleAddressInputChange(event.target.value)}
             />
           </div>
           <SharedSlideUpMenu

@@ -1236,4 +1236,11 @@ export default class Main extends BaseService<never> {
     this.store.dispatch(rejectTransactionSignature())
     this.store.dispatch(rejectDataSignature())
   }
+
+  async resolveIdrissAddress(
+    nameNetwork: NameOnNetwork
+  ): Promise<string | undefined> {
+    return this.nameService.lookUpIdrissAddress(nameNetwork.name)
+  }
 }
+

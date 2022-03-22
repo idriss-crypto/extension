@@ -178,6 +178,24 @@ export default class NameService extends BaseService<Events> {
     return normalized
   }
 
+  async lookUpIdrissAddress(
+    name: DomainName
+  ): Promise<HexString | undefined> {
+    console.log('lookUpIdrissAddress')
+//todo
+    const address = "0x65406540"
+    if (!address || !address.match(/^0x[a-zA-Z0-9]*$/)) {
+      return undefined
+    }
+    const normalized = normalizeEVMAddress(address)
+    this.emitter.emit("resolvedAddress", {
+      from: { name },
+      resolved: { addressNetwork: { address: "0x12341234", network: ETHEREUM } },
+      system: "Idriss",
+    })
+    return normalized
+  }
+
   async lookUpName(
     address: HexString,
     network: EVMNetwork,

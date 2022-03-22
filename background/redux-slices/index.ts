@@ -14,8 +14,10 @@ import dappPermissionReducer from "./dapp-permission"
 import ledgerReducer from "./ledger"
 import signingReducer from "./signing"
 import earnReducer from "./earn"
+import resolveIdrissAddressReducer from "./idriss-resolver"
 
 const mainReducer = combineReducers({
+  resolvedIdrissAddress: resolveIdrissAddressReducer,
   account: accountsReducer,
   assets: assetsReducer,
   activities: activitiesReducer,
