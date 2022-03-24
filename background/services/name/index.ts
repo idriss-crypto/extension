@@ -11,6 +11,7 @@ import logger from "../../lib/logger"
 import {AddressOnNetwork} from "../../accounts"
 import {SECOND} from "../../constants"
 import {IdrissCrypto} from "idriss-crypto/lib/browser";
+import {ResolvedIdrissAddressState} from "../../redux-slices/idriss-resolver";
 
 type ResolvedAddressRecord = {
   from: {
@@ -178,20 +179,10 @@ export default class NameService extends BaseService<Events> {
   }
 
   async lookUpIdrissAddress(
-    name: DomainName
-  ): Promise<HexString | undefined> {
-    const response = await (new IdrissCrypto()).resolve(name, {network: "evm"})
-    const address = Object.values(response)[0];
-    if (!address || !address.match(/^0x[a-zA-Z0-9]*$/)) {
-      return undefined
-    }
-    const normalized = normalizeEVMAddress(address)
-    this.emitter.emit("resolvedAddress", {
-      from: {name},
-      resolved: {addressNetwork: {address: normalized, network: ETHEREUM}},
-      system: "Idriss",
-    })
-    return normalized
+    name: string
+  ): Promise<ResolvedIdrissAddressState> {
+    const allAddresses = await (new IdrissCrypto()).resolve(name, {network: "evm"})
+    return { name, allAddresses }
   }
 
   async lookUpName(

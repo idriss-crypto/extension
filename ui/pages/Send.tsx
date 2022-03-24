@@ -1,5 +1,5 @@
-import React, { ReactElement, useCallback, useEffect, useState } from "react"
-import { isAddress } from "@ethersproject/address"
+import React, {ReactElement, useCallback, useEffect, useState} from "react"
+import {isAddress} from "@ethersproject/address"
 import {
   selectCurrentAccount,
   selectCurrentAccountBalances,
@@ -12,28 +12,28 @@ import {
   setFeeType,
   updateTransactionOptions,
 } from "@tallyho/tally-background/redux-slices/transaction-construction"
-import { utils } from "ethers"
+import {utils} from "ethers"
 import {
   FungibleAsset,
   isFungibleAssetAmount,
 } from "@tallyho/tally-background/assets"
-import { ETH } from "@tallyho/tally-background/constants"
+import {ETH} from "@tallyho/tally-background/constants"
 import {
   convertFixedPointNumber,
   parseToFixedPointNumber,
 } from "@tallyho/tally-background/lib/fixed-point"
-import { selectAssetPricePoint } from "@tallyho/tally-background/redux-slices/assets"
-import { CompleteAssetAmount } from "@tallyho/tally-background/redux-slices/accounts"
-import { enrichAssetAmountWithMainCurrencyValues } from "@tallyho/tally-background/redux-slices/utils/asset-utils"
+import {selectAssetPricePoint} from "@tallyho/tally-background/redux-slices/assets"
+import {CompleteAssetAmount} from "@tallyho/tally-background/redux-slices/accounts"
+import {enrichAssetAmountWithMainCurrencyValues} from "@tallyho/tally-background/redux-slices/utils/asset-utils"
 import NetworkSettingsChooser from "../components/NetworkFees/NetworkSettingsChooser"
 import SharedAssetInput from "../components/Shared/SharedAssetInput"
 import SharedBackButton from "../components/Shared/SharedBackButton"
 import SharedButton from "../components/Shared/SharedButton"
-import { useBackgroundDispatch, useBackgroundSelector } from "../hooks"
+import {useBackgroundDispatch, useBackgroundSelector} from "../hooks"
 import SharedSlideUpMenu from "../components/Shared/SharedSlideUpMenu"
 import FeeSettingsButton from "../components/NetworkFees/FeeSettingsButton"
 import {checkIfStringIsValidIdrissName} from "@tallyho/tally-background/lib/utils";
-import { ETHEREUM } from "@tallyho/tally-background/constants/networks"
+import {ETHEREUM} from "@tallyho/tally-background/constants/networks"
 import selectResolvedIdrissAddress from "@tallyho/tally-background/redux-slices/selectors/idrissSelectors";
 import {
   resolveIdrissAddress, setResolvedAddress
@@ -45,6 +45,7 @@ export default function Send(): ReactElement {
   const [amount, setAmount] = useState("")
   const [gasLimit, setGasLimit] = useState("")
   const [hasError, setHasError] = useState(false)
+  const [lastInputValue, setLastInputValue] = useState("")
   const [networkSettingsModalOpen, setNetworkSettingsModalOpen] =
     useState(false)
 
@@ -60,6 +61,7 @@ export default function Send(): ReactElement {
   const handleAddressInputChange = useCallback(
     (value: string) => {
       const trimmedAddress = value.trim()
+      setLastInputValue(trimmedAddress);
       if (checkIfStringIsValidIdrissName(trimmedAddress)) {
         const nameNetwork = {
           name: trimmedAddress,
@@ -76,17 +78,14 @@ export default function Send(): ReactElement {
   )
 
   useEffect(() => {
-    if (resolvedIdrissAddress.address) {
-      if (isAddress(resolvedIdrissAddress.address)) {
-        // Set the destination address
-        setDestinationAddress(resolvedIdrissAddress.address)
-        // Clear the error flag
-        setHasError(false)
-        // Reset the resolved address to an empty string
-        dispatch(setResolvedAddress(""))
-      }
+    if (Object.values(resolvedIdrissAddress.allAddresses).length) {
+      console.log({resolvedIdrissAddress})
+      // Set the destination address
+      setDestinationAddress(Object.values(resolvedIdrissAddress.allAddresses)[0])
+      // Clear the error flag
+      setHasError(false)
     }
-  }, [dispatch, resolvedIdrissAddress.address])
+  }, [dispatch, resolvedIdrissAddress])
 
   const fungibleAssetAmounts =
     // Only look at fungible assets.
@@ -147,10 +146,10 @@ export default function Send(): ReactElement {
     <>
       <div className="standard_width">
         <div className="back_button_wrap">
-          <SharedBackButton />
+          <SharedBackButton/>
         </div>
         <h1 className="header">
-          <span className="icon_activity_send_medium" />
+          <span className="icon_activity_send_medium"/>
           <div className="title">Send Asset</div>
         </h1>
         <div className="form">
@@ -185,6 +184,11 @@ export default function Send(): ReactElement {
               onChange={(event) => handleAddressInputChange(event.target.value)}
             />
           </div>
+          {Object.values(resolvedIdrissAddress.allAddresses).length>0 &&resolvedIdrissAddress.name==lastInputValue ?Object.entries(resolvedIdrissAddress.allAddresses).map(([key, address]) => {
+            let className='addressSelection '+(address==destinationAddress?'isActive':'')
+            return <button className={className} onClick={event => setDestinationAddress(address)}><strong>IDriss: {resolvedIdrissAddress.name} {key}</strong> <span>{address.substr(0,6)}...{address.substr(-4)}</span></button>;
+          }):''}
+
           <SharedSlideUpMenu
             size="custom"
             isOpen={networkSettingsModalOpen}
@@ -317,6 +321,30 @@ export default function Send(): ReactElement {
             display: flex;
             justify-content: space-between;
             align-items: center;
+          }
+          .addressSelection {
+            height: 72px;
+            width: 100%;
+            border-radius: 16px;
+            background-color: var(--green-95);
+            display: flex;
+            flex-direction: column;
+            padding: 11px 19px 8px 8px;
+            box-sizing: border-box;
+            margin-bottom: 16px;
+            justify-content: space-between;
+            align-items: center;
+          }
+          .addressSelection:hover,.addressSelection.isActive {
+            background-color: var(--green-80);
+          }
+          .addressSelection span {
+            line-height: 27px;
+            margin: -27px 4px 0 0;
+            color: var(--green-40);
+            text-align: right;
+            position: relative;
+            font-size: 14px;
           }
         `}
       </style>

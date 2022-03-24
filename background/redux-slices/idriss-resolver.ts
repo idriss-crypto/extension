@@ -1,13 +1,16 @@
-import { createSlice } from "@reduxjs/toolkit"
-import { NameOnNetwork } from "../accounts"
-import { createBackgroundAsyncThunk } from "./utils"
+import {createSlice} from "@reduxjs/toolkit"
+import {NameOnNetwork} from "../accounts"
+import {createBackgroundAsyncThunk} from "./utils"
+import {HexString} from "../types";
 
 export type ResolvedIdrissAddressState = {
-  address: string
+  name: string,
+  allAddresses: { [key: string]: HexString }
 }
 
 export const initialState: ResolvedIdrissAddressState = {
-  address: "",
+  name: "",
+  allAddresses: {},
 }
 
 const resolveIdrissAddressSlice = createSlice({
@@ -16,23 +19,22 @@ const resolveIdrissAddressSlice = createSlice({
   reducers: {
     setResolvedAddress: (
       immerState,
-      { payload: resolvedAddress }: { payload: string }
+      {payload}: { payload: ResolvedIdrissAddressState }
     ) => {
-      immerState.address = resolvedAddress
+      immerState.name = payload.name
+      immerState.allAddresses = payload.allAddresses
     },
   },
 })
 
-export const { setResolvedAddress } = resolveIdrissAddressSlice.actions
+export const {setResolvedAddress} = resolveIdrissAddressSlice.actions
 
 export default resolveIdrissAddressSlice.reducer
 
 export const resolveIdrissAddress = createBackgroundAsyncThunk(
   "idriss/resolveIdrissAddress",
-  async (nameNetwork: NameOnNetwork, { dispatch, extra: { main } }) => {
-    const address = await main.resolveIdrissAddress(nameNetwork)
-    if (address) {
-      dispatch(resolveIdrissAddressSlice.actions.setResolvedAddress(address))
-    }
+  async (nameNetwork: NameOnNetwork, {dispatch, extra: {main}}) => {
+    const data = await main.resolveIdrissAddress(nameNetwork)
+    dispatch(resolveIdrissAddressSlice.actions.setResolvedAddress(data))
   }
 )
