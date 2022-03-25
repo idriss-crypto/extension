@@ -3,6 +3,7 @@ import { normalizeHexAddress } from "@tallyho/hd-keyring"
 import { HexString } from "../../types"
 import { EVMNetwork } from "../../networks"
 import { ETHEREUM, ROPSTEN, RINKEBY, GOERLI, KOVAN } from "../../constants"
+import {IdrissCrypto} from "idriss-crypto/lib/browser";
 
 export function normalizeEVMAddress(address: string | Buffer): HexString {
   return normalizeHexAddress(address)
