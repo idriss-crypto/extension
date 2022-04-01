@@ -49,17 +49,18 @@ import {
   setDefaultWallet,
   setSelectedAccount,
   setNewSelectedAccount,
+  setSnackbarMessage,
 } from "./redux-slices/ui"
 import {
   estimatedFeesPerGas,
   emitter as transactionConstructionSliceEmitter,
   transactionRequest,
-  signed,
   updateTransactionOptions,
   clearTransactionState,
   selectDefaultNetworkFeeSettings,
   TransactionConstructionStatus,
   rejectTransactionSignature,
+  transactionSigned,
 } from "./redux-slices/transaction-construction"
 import { allAliases } from "./redux-slices/utils"
 import {
@@ -114,7 +115,7 @@ const devToolsSanitizer = (input: unknown) => {
 
 // The version of persisted Redux state the extension is expecting. Any previous
 // state without this version, or with a lower version, ought to be migrated.
-const REDUX_STATE_VERSION = 5
+const REDUX_STATE_VERSION = 6
 
 type Migration = (prevState: Record<string, unknown>) => Record<string, unknown>
 
@@ -206,6 +207,13 @@ const REDUX_MIGRATIONS: { [version: number]: Migration } = {
   5: (prevState: any) => {
     const { ...newState } = prevState
     newState.keyrings.keyringMetadata = {}
+
+    return newState
+  },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  6: (prevState: any) => {
+    const { ...newState } = prevState
+    newState.ledger.isArbitraryDataSigningEnabled = false
 
     return newState
   },
@@ -610,9 +618,9 @@ export default class Main extends BaseService<never> {
         address,
         network: ETHEREUM,
       }
+      this.store.dispatch(loadAccount(address))
       // eslint-disable-next-line no-await-in-loop
       await this.chainService.addAccountToTrack(addressNetwork)
-      this.store.dispatch(loadAccount(address))
       this.store.dispatch(setNewSelectedAccount(addressNetwork))
     }
   }
@@ -643,6 +651,18 @@ export default class Main extends BaseService<never> {
 
     this.chainService.emitter.on("block", (block) => {
       this.store.dispatch(blockSeen(block))
+    })
+
+    this.chainService.emitter.on("transactionSend", () => {
+      this.store.dispatch(
+        setSnackbarMessage("Transaction signed, broadcasting...")
+      )
+    })
+
+    this.chainService.emitter.on("transactionSendFailure", () => {
+      this.store.dispatch(
+        setSnackbarMessage("Transaction failed to broadcast.")
+      )
     })
 
     transactionConstructionSliceEmitter.on("updateOptions", async (options) => {
@@ -706,14 +726,17 @@ export default class Main extends BaseService<never> {
             await this.chainService.populateEVMTransactionNonce(transaction)
 
           try {
-            const signedTx = await this.keyringService.signTransaction(
-              {
-                address: transaction.from,
-                network: this.chainService.ethereumNetwork,
-              },
-              transactionWithNonce
+            const signedTransactionResult =
+              await this.keyringService.signTransaction(
+                {
+                  address: transaction.from,
+                  network: this.chainService.ethereumNetwork,
+                },
+                transactionWithNonce
+              )
+            await this.store.dispatch(
+              transactionSigned(signedTransactionResult)
             )
-            this.store.dispatch(signed(signedTx))
           } catch (exception) {
             logger.error(
               "Error signing transaction; releasing nonce",
@@ -723,11 +746,11 @@ export default class Main extends BaseService<never> {
           }
         } else {
           try {
-            const signedTx = await this.signingService.signTransaction(
-              transaction,
-              method
+            const signedTransactionResult =
+              await this.signingService.signTransaction(transaction, method)
+            await this.store.dispatch(
+              transactionSigned(signedTransactionResult)
             )
-            this.store.dispatch(signed(signedTx))
           } catch (exception) {
             logger.error("Error signing transaction", exception)
             this.store.dispatch(
@@ -870,14 +893,18 @@ export default class Main extends BaseService<never> {
         setDeviceConnectionStatus({
           deviceID: id,
           status: "available",
-          isBlindSigner: metadata.ethereumBlindSigner,
+          isArbitraryDataSigningEnabled: metadata.isArbitraryDataSigningEnabled,
         })
       )
     })
 
     this.ledgerService.emitter.on("disconnected", ({ id }) => {
       this.store.dispatch(
-        setDeviceConnectionStatus({ deviceID: id, status: "disconnected" })
+        setDeviceConnectionStatus({
+          deviceID: id,
+          status: "disconnected",
+          isArbitraryDataSigningEnabled: false /* dummy */,
+        })
       )
     })
 
@@ -986,9 +1013,11 @@ export default class Main extends BaseService<never> {
           }
         }
 
-        const resolveAndClear = (signedTransaction: SignedEVMTransaction) => {
+        const resolveAndClear = (
+          signedTransactionResult: SignedEVMTransaction
+        ) => {
           clear()
-          resolver(signedTransaction)
+          resolver(signedTransactionResult)
         }
 
         const rejectAndClear = () => {

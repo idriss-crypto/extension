@@ -13,6 +13,8 @@ import {SECOND} from "../../constants"
 import {IdrissCrypto} from "idriss-crypto/lib/browser";
 import {ResolvedIdrissAddressState} from "../../redux-slices/idriss-resolver";
 
+export type NameResolverSystem = "ENS" | "UNS" | "local" | "Idriss"
+
 type ResolvedAddressRecord = {
   from: {
     name: DomainName
@@ -20,7 +22,7 @@ type ResolvedAddressRecord = {
   resolved: {
     addressNetwork: AddressOnNetwork
   }
-  system: "ENS" | "UNS" | "Idriss"
+  system: NameResolverSystem
 }
 
 type ResolvedNameRecord = {
@@ -31,7 +33,7 @@ type ResolvedNameRecord = {
     name: DomainName
     expiresAt: UNIXTime
   }
-  system: "ENS" | "UNS"
+  system: NameResolverSystem
 }
 
 type ResolvedAvatarRecord = {
@@ -41,7 +43,7 @@ type ResolvedAvatarRecord = {
   resolved: {
     avatar: URL
   }
-  system: "ENS" | "UNS"
+  system: NameResolverSystem
 }
 
 type Events = ServiceLifecycleEvents & {
