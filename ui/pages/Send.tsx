@@ -14,7 +14,7 @@ import {
   FungibleAsset,
   isFungibleAssetAmount,
 } from "@tallyho/tally-background/assets"
-import {ETH} from "@tallyho/tally-background/constants"
+import { ETH } from "@tallyho/tally-background/constants"
 import {
   convertFixedPointNumber,
   parseToFixedPointNumber,
@@ -30,7 +30,7 @@ import NetworkSettingsChooser from "../components/NetworkFees/NetworkSettingsCho
 import SharedAssetInput from "../components/Shared/SharedAssetInput"
 import SharedBackButton from "../components/Shared/SharedBackButton"
 import SharedButton from "../components/Shared/SharedButton"
-import {useBackgroundDispatch, useBackgroundSelector} from "../hooks"
+import { useBackgroundDispatch, useBackgroundSelector } from "../hooks"
 import SharedSlideUpMenu from "../components/Shared/SharedSlideUpMenu"
 import FeeSettingsButton from "../components/NetworkFees/FeeSettingsButton"
 import {checkIfStringIsValidIdrissName} from "@tallyho/tally-background/lib/utils";
