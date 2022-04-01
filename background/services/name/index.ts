@@ -1,17 +1,17 @@
-import {DomainName, HexString, UNIXTime} from "../../types"
-import {EVMNetwork} from "../../networks"
-import {normalizeEVMAddress, sameEVMAddress} from "../../lib/utils"
-import {ETHEREUM} from "../../constants/networks"
-import {getTokenMetadata} from "../../lib/erc721"
+import { DomainName, HexString, UNIXTime } from "../../types"
+import { EVMNetwork } from "../../networks"
+import { normalizeEVMAddress, sameEVMAddress } from "../../lib/utils"
+import { ETHEREUM } from "../../constants/networks"
+import { getTokenMetadata } from "../../lib/erc721"
 
-import {ServiceCreatorFunction, ServiceLifecycleEvents} from "../types"
+import { ServiceCreatorFunction, ServiceLifecycleEvents } from "../types"
 import BaseService from "../base"
 import ChainService from "../chain"
 import logger from "../../lib/logger"
-import {AddressOnNetwork} from "../../accounts"
-import {SECOND} from "../../constants"
 import {IdrissCrypto} from "idriss-crypto/lib/browser";
 import {ResolvedIdrissAddressState} from "../../redux-slices/idriss-resolver";
+import { AddressOnNetwork } from "../../accounts"
+import { SECOND } from "../../constants"
 
 export type NameResolverSystem = "ENS" | "UNS" | "local" | "Idriss"
 
@@ -111,9 +111,11 @@ export default class NameService extends BaseService<Events> {
    * @param chainService - Required for chain interactions.
    * @returns A new, initializing ChainService
    */
-  static create: ServiceCreatorFunction<Events,
+  static create: ServiceCreatorFunction<
+    Events,
     NameService,
-    [Promise<ChainService>]> = async (chainService) => {
+    [Promise<ChainService>]
+    > = async (chainService) => {
     return new this(await chainService)
   }
 
@@ -122,7 +124,7 @@ export default class NameService extends BaseService<Events> {
 
     chainService.emitter.on(
       "newAccountToTrack",
-      async ({address, network}) => {
+      async ({ address, network }) => {
         try {
           await this.lookUpName(address, network)
         } catch (error) {
@@ -134,7 +136,7 @@ export default class NameService extends BaseService<Events> {
       "resolvedName",
       async ({
                from: {
-                 addressNetwork: {address, network},
+                 addressNetwork: { address, network },
                },
              }) => {
         try {
@@ -142,8 +144,8 @@ export default class NameService extends BaseService<Events> {
 
           if (avatar) {
             this.emitter.emit("resolvedAvatar", {
-              from: {addressNetwork: {address, network}},
-              resolved: {avatar},
+              from: { addressNetwork: { address, network } },
+              resolved: { avatar },
               system: "ENS",
             })
           }
@@ -173,8 +175,8 @@ export default class NameService extends BaseService<Events> {
     }
     const normalized = normalizeEVMAddress(address)
     this.emitter.emit("resolvedAddress", {
-      from: {name},
-      resolved: {addressNetwork: {address: normalized, network: ETHEREUM}},
+      from: { name },
+      resolved: { addressNetwork: { address: normalized, network: ETHEREUM } },
       system: "ENS",
     })
     return normalized
@@ -199,7 +201,7 @@ export default class NameService extends BaseService<Events> {
 
     if (checkCache && address in this.cachedResolvedNames) {
       const {
-        resolved: {name, expiresAt},
+        resolved: { name, expiresAt },
       } = this.cachedResolvedNames[address]
 
       if (expiresAt >= Date.now()) {
@@ -224,7 +226,7 @@ export default class NameService extends BaseService<Events> {
     }
 
     const nameRecord = {
-      from: {addressNetwork: {address, network}},
+      from: { addressNetwork: { address, network } },
       resolved: {
         name,
         // TODO Read this from the name service; for now, this avoids infinite
@@ -286,7 +288,7 @@ export default class NameService extends BaseService<Events> {
           )
 
           if (metadata && metadata.image) {
-            const {image} = metadata
+            const { image } = metadata
             const resolvedGateway = storageGatewayURL(new URL(image))
             this.cachedEIP155AvatarURLs[avatar] = resolvedGateway
             return resolvedGateway
