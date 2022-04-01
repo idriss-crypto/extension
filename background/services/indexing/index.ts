@@ -92,7 +92,7 @@ export default class IndexingService extends BaseService<Events> {
       },
       tokenRefreshes: {
         schedule: {
-          periodInMinutes: 1,
+          periodInMinutes: 10,
         },
         handler: () => this.handleTokenRefresh(),
       },
