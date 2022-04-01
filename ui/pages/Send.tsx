@@ -1,4 +1,4 @@
-import React, { ReactElement, useCallback, useState } from "react"
+import React, { ReactElement, useCallback, useEffect, useState } from "react"
 import { isAddress } from "@ethersproject/address"
 import {
   selectCurrentAccount,
@@ -86,7 +86,6 @@ export default function Send(): ReactElement {
 
   useEffect(() => {
     if (Object.values(resolvedIdrissAddress.allAddresses).length) {
-      console.log({resolvedIdrissAddress})
       // Set the destination address
       setDestinationAddress(Object.values(resolvedIdrissAddress.allAddresses)[0])
       // Clear the error flag
