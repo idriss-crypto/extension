@@ -37,6 +37,8 @@ import {
 } from "../hooks"
 import SharedSlideUpMenu from "../components/Shared/SharedSlideUpMenu"
 import FeeSettingsButton from "../components/NetworkFees/FeeSettingsButton"
+import {checkIfStringIsValidIdrissName} from "@tallyho/tally-background/lib/utils";
+import {ETHEREUM} from "@tallyho/tally-background/constants/networks"
 import SharedLoadingSpinner from "../components/Shared/SharedLoadingSpinner"
 import t from "../utils/i18n"
 import selectResolvedIdrissAddress from "@tallyho/tally-background/redux-slices/selectors/idrissSelectors";

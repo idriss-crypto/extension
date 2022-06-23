@@ -26,7 +26,7 @@ import { isFulfilledPromise } from "../../lib/utils/type-guards"
 import { RESOLVE_RNS_NAMES } from "../../features"
 
 export { NameResolverSystem }
-export type NameResolverSystem = "ENS" | "UNS" | "local" | "Idriss"//aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
 
 type ResolvedAddressRecord = {
   from: {
