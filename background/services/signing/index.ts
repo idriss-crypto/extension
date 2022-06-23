@@ -1,18 +1,13 @@
 import { StatusCodes, TransportStatusError } from "@ledgerhq/errors"
 import KeyringService from "../keyring"
 import LedgerService from "../ledger"
-import {
-  EIP1559TransactionRequest,
-  EVMNetwork,
-  SignedEVMTransaction,
-} from "../../networks"
+import { EIP1559TransactionRequest, SignedEVMTransaction } from "../../networks"
 import { EIP712TypedData, HexString } from "../../types"
 import BaseService from "../base"
 import { ServiceCreatorFunction, ServiceLifecycleEvents } from "../types"
 import ChainService from "../chain"
-import { USE_MAINNET_FORK } from "../../features/features"
-import { FORK } from "../../constants"
 import { SigningMethod } from "../../utils/signing"
+import { AddressOnNetwork } from "../../accounts"
 
 type SigningErrorReason = "userRejected" | "genericError"
 type ErrorResponse = {
@@ -114,21 +109,22 @@ export default class SigningService extends BaseService<Events> {
   }
 
   private async signTransactionWithNonce(
-    network: EVMNetwork,
     transactionWithNonce: EIP1559TransactionRequest & { nonce: number },
     signingMethod: SigningMethod
   ): Promise<SignedEVMTransaction> {
     switch (signingMethod.type) {
       case "ledger":
         return this.ledgerService.signTransaction(
-          network,
           transactionWithNonce,
           signingMethod.deviceID,
           signingMethod.path
         )
       case "keyring":
         return this.keyringService.signTransaction(
-          { address: transactionWithNonce.from, network },
+          {
+            address: transactionWithNonce.from,
+            network: transactionWithNonce.network,
+          },
           transactionWithNonce
         )
       default:
@@ -143,6 +139,7 @@ export default class SigningService extends BaseService<Events> {
     switch (signingMethod.type) {
       case "keyring":
         await this.keyringService.hideAccount(address)
+        await this.chainService.removeAccountToTrack(address)
         break
       case "ledger":
         // @TODO Implement removal of ledger accounts.
@@ -156,19 +153,11 @@ export default class SigningService extends BaseService<Events> {
     transactionRequest: EIP1559TransactionRequest,
     signingMethod: SigningMethod
   ): Promise<SignedEVMTransaction> {
-    const network = USE_MAINNET_FORK
-      ? FORK
-      : this.chainService.resolveNetwork(transactionRequest)
-    if (typeof network === "undefined") {
-      throw new Error(`Unknown chain ID ${transactionRequest.chainID}.`)
-    }
-
     const transactionWithNonce =
       await this.chainService.populateEVMTransactionNonce(transactionRequest)
 
     try {
       const signedTx = await this.signTransactionWithNonce(
-        network,
         transactionWithNonce,
         signingMethod
       )
@@ -201,16 +190,33 @@ export default class SigningService extends BaseService<Events> {
     signingMethod,
   }: {
     typedData: EIP712TypedData
-    account: HexString
+    account: AddressOnNetwork
     signingMethod: SigningMethod
   }): Promise<string> {
     try {
       let signedData: string
+      const chainId =
+        typeof typedData.domain.chainId === "string"
+          ? // eslint-disable-next-line radix
+            parseInt(typedData.domain.chainId)
+          : typedData.domain.chainId
+      if (
+        typedData.domain.chainId !== undefined &&
+        // Let parseInt infer radix by prefix; chainID can be hex or decimal,
+        // though it should generally be hex.
+        // eslint-disable-next-line radix
+        chainId !== parseInt(account.network.chainID)
+      ) {
+        throw new Error(
+          "Attempting to sign typed data with mismatched chain IDs."
+        )
+      }
+
       switch (signingMethod.type) {
         case "ledger":
           signedData = await this.ledgerService.signTypedData(
             typedData,
-            account,
+            account.address,
             signingMethod.deviceID,
             signingMethod.path
           )
@@ -218,7 +224,7 @@ export default class SigningService extends BaseService<Events> {
         case "keyring":
           signedData = await this.keyringService.signTypedData({
             typedData,
-            account,
+            account: account.address,
           })
           break
         default:
@@ -241,7 +247,7 @@ export default class SigningService extends BaseService<Events> {
   }
 
   async signData(
-    address: string,
+    addressOnNetwork: AddressOnNetwork,
     message: string,
     signingMethod: SigningMethod
   ): Promise<string> {
@@ -250,12 +256,15 @@ export default class SigningService extends BaseService<Events> {
       let signedData
       switch (signingMethod.type) {
         case "ledger":
-          signedData = await this.ledgerService.signMessage(address, message)
+          signedData = await this.ledgerService.signMessage(
+            addressOnNetwork,
+            message
+          )
           break
         case "keyring":
           signedData = await this.keyringService.personalSign({
             signingData: message,
-            account: address,
+            account: addressOnNetwork.address,
           })
           break
         default:

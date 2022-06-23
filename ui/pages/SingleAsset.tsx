@@ -84,7 +84,7 @@ export default function SingleAsset(): ReactElement {
   return (
     <>
       <div className="back_button_wrap standard_width_padded">
-        <SharedBackButton />
+        <SharedBackButton path="/" />
       </div>
       {typeof asset === "undefined" ? (
         <></>
@@ -130,7 +130,7 @@ export default function SingleAsset(): ReactElement {
                 <SharedButton
                   type="primary"
                   size="medium"
-                  icon="send"
+                  iconSmall="send"
                   linkTo={{
                     pathname: "/send",
                     state: asset,
@@ -141,7 +141,7 @@ export default function SingleAsset(): ReactElement {
                 <SharedButton
                   type="primary"
                   size="medium"
-                  icon="swap"
+                  iconSmall="swap"
                   linkTo={{
                     pathname: "/swap",
                     state: asset,

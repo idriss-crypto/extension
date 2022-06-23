@@ -12,11 +12,13 @@ import { Store } from "webext-redux"
 import { Provider } from "react-redux"
 import { TransitionGroup, CSSTransition } from "react-transition-group"
 import { isAllowedQueryParamPage } from "@tallyho/provider-bridge-shared"
-import { PERSIST_UI_LOCATION } from "@tallyho/tally-background/features/features"
 import { runtime } from "webextension-polyfill"
 import { popupMonitorPortName } from "@tallyho/tally-background/main"
-import { selectKeyringStatus } from "@tallyho/tally-background/redux-slices/selectors"
-import { selectIsTransactionPendingSignature } from "@tallyho/tally-background/redux-slices/transaction-construction"
+import {
+  selectCurrentAccountSigningMethod,
+  selectKeyringStatus,
+} from "@tallyho/tally-background/redux-slices/selectors"
+import { selectIsTransactionPendingSignature } from "@tallyho/tally-background/redux-slices/selectors/transactionConstructionSelectors"
 import {
   useIsDappPopup,
   useBackgroundDispatch,
@@ -44,7 +46,7 @@ const pagePreferences = Object.fromEntries(
 function transformLocation(
   inputLocation: Location,
   isTransactionPendingSignature: boolean,
-  keyringStatus: "locked" | "unlocked" | "uninitialized"
+  needsKeyringUnlock: boolean
 ): Location {
   // The inputLocation is not populated with the actual query string — even though it should be
   // so I need to grab it from the window
@@ -60,8 +62,7 @@ function transformLocation(
   }
 
   if (isTransactionPendingSignature) {
-    pathname =
-      keyringStatus === "unlocked" ? "/sign-transaction" : "/keyring/unlock"
+    pathname = needsKeyringUnlock ? "/keyring/unlock" : "/sign-transaction"
   }
 
   return {
@@ -112,7 +113,13 @@ export function Main(): ReactElement {
   const isTransactionPendingSignature = useBackgroundSelector(
     selectIsTransactionPendingSignature
   )
+  const signingMethod = useBackgroundSelector(selectCurrentAccountSigningMethod)
   const keyringStatus = useBackgroundSelector(selectKeyringStatus)
+
+  const needsKeyringUnlock =
+    isTransactionPendingSignature &&
+    signingMethod?.type === "keyring" &&
+    keyringStatus !== "unlocked"
 
   useConnectPopupMonitor()
 
@@ -121,14 +128,13 @@ export function Main(): ReactElement {
       <div className="top_menu_wrap_decoy">
         <TopMenu />
       </div>
-      <div className="community_edition_label">Community Edition</div>
       <Router initialEntries={routeHistoryEntries}>
         <Route
           render={(routeProps) => {
             const transformedLocation = transformLocation(
               routeProps.location,
               isTransactionPendingSignature,
-              keyringStatus
+              needsKeyringUnlock
             )
 
             const normalizedPathname =
@@ -143,7 +149,6 @@ export function Main(): ReactElement {
             // the user or explicitly added. That said, we can still certainly "POP" via
             // history.goBack(). This case is not yet accounted for.
             if (
-              PERSIST_UI_LOCATION &&
               pagePreferences[normalizedPathname].persistOnClose &&
               routeProps.history.action === "PUSH"
             ) {
@@ -230,21 +235,6 @@ export function Main(): ReactElement {
             }
             .hide {
               opacity: 0;
-            }
-            .community_edition_label {
-              width: 140px;
-              height: 20px;
-              left: 24px;
-              position: fixed;
-              background-color: var(--gold-60);
-              color: var(--hunter-green);
-              font-weight: 500;
-              text-align: center;
-              border-bottom-left-radius: 4px;
-              border-bottom-right-radius: 4px;
-              font-size: 14px;
-              z-index: 1000;
-              top: 0px;
             }
           `}
         </style>

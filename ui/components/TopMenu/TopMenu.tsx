@@ -5,10 +5,12 @@ import {
   selectAllowedPages,
   selectCurrentAccount,
 } from "@tallyho/tally-background/redux-slices/selectors"
+import { HIDE_TOKEN_FEATURES } from "@tallyho/tally-background/features"
 import { denyOrRevokePermission } from "@tallyho/tally-background/redux-slices/dapp-permission"
 import TopMenuProtocolSwitcher from "./TopMenuProtocolSwitcher"
 import TopMenuProfileButton from "./TopMenuProfileButton"
 
+import BonusProgramModal from "../BonusProgram/BonusProgramModal"
 import AccountsNotificationPanel from "../AccountsNotificationPanel/AccountsNotificationPanel"
 import SharedSlideUpMenu from "../Shared/SharedSlideUpMenu"
 import TopMenuConnectedDAppInfo from "./TopMenuConnectedDAppInfo"
@@ -19,6 +21,7 @@ import { useBackgroundDispatch, useBackgroundSelector } from "../../hooks"
 export default function TopMenu(): ReactElement {
   const [isProtocolListOpen, setIsProtocolListOpen] = useState(false)
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
+  const [isBonusProgramOpen, setIsBonusProgramOpen] = useState(false)
 
   const [isActiveDAppConnectionInfoOpen, setIsActiveDAppConnectionInfoOpen] =
     useState(false)
@@ -47,7 +50,10 @@ export default function TopMenu(): ReactElement {
 
     const { origin } = new URL(url)
 
-    const allowPermission = allowedPages[`${origin}_${currentAccount.address}`]
+    const allowPermission =
+      allowedPages[
+        `${origin}_${currentAccount.address}_${currentAccount.network.chainID}`
+      ]
 
     if (allowPermission) {
       setCurrentPermission(allowPermission)
@@ -63,12 +69,24 @@ export default function TopMenu(): ReactElement {
 
   const deny = useCallback(async () => {
     if (typeof currentPermission !== "undefined") {
-      await dispatch(
-        denyOrRevokePermission({ ...currentPermission, state: "deny" })
+      // TODO refactor when we have per-network permission deletion designed.
+      await Promise.all(
+        Object.entries(allowedPages).map(async ([key, permission]) => {
+          if (
+            key.startsWith(
+              `${currentPermission.origin}_${currentPermission.accountAddress}`
+            )
+          ) {
+            return dispatch(
+              denyOrRevokePermission({ ...permission, state: "deny" })
+            )
+          }
+          return undefined
+        })
       )
     }
     window.close()
-  }, [dispatch, currentPermission])
+  }, [dispatch, currentPermission, allowedPages])
 
   return (
     <>
@@ -83,13 +101,23 @@ export default function TopMenu(): ReactElement {
           disconnect={deny}
         />
       ) : null}
+      <BonusProgramModal
+        isOpen={isBonusProgramOpen}
+        onClose={() => {
+          setIsBonusProgramOpen(false)
+        }}
+      />
       <SharedSlideUpMenu
         isOpen={isProtocolListOpen}
         close={() => {
           setIsProtocolListOpen(false)
         }}
       >
-        <TopMenuProtocolList />
+        <TopMenuProtocolList
+          onProtocolChange={() => {
+            setIsProtocolListOpen(false)
+          }}
+        />
       </SharedSlideUpMenu>
       <SharedSlideUpMenu
         isOpen={isNotificationsOpen}
@@ -103,7 +131,9 @@ export default function TopMenu(): ReactElement {
       </SharedSlideUpMenu>
       <div className="nav_wrap">
         <nav className="standard_width_padded">
-          <TopMenuProtocolSwitcher />
+          <TopMenuProtocolSwitcher
+            onClick={() => setIsProtocolListOpen(true)}
+          />
           <div className="profile_group">
             {isConnectedToDApp && (
               <button
@@ -114,6 +144,16 @@ export default function TopMenu(): ReactElement {
                   setIsActiveDAppConnectionInfoOpen(
                     !isActiveDAppConnectionInfoOpen
                   )
+                }}
+              />
+            )}
+            {!HIDE_TOKEN_FEATURES && (
+              <button
+                type="button"
+                aria-label="Rewards program"
+                className="gift_button"
+                onClick={() => {
+                  setIsBonusProgramOpen(!isBonusProgramOpen)
                 }}
               />
             )}
@@ -142,22 +182,27 @@ export default function TopMenu(): ReactElement {
               margin-bottom: 6px;
               z-index: inherit;
             }
-            }
             .profile_group {
               display: flex;
               align-items: center;
             }
-            .connection_button {
-              background: url("./images/bolt@2x.png") center no-repeat;
+            button {
               border-radius: 12px;
-              background-size: 10px 20px;
               border: solid 3px var(--hunter-green);
               width: 32px;
               height: 32px;
               margin-right: 2px;
             }
-            .connection_button:hover {
+            button:hover {
               background-color: var(--green-80);
+            }
+            .connection_button {
+              background: url("./images/bolt@2x.png") center no-repeat;
+              background-size: 10px 20px;
+            }
+            .gift_button {
+              background: url("./images/gift@2x.png") center no-repeat;
+              background-size: 24px 24px;
             }
           `}
         </style>

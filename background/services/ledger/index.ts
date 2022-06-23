@@ -14,7 +14,7 @@ import {
 } from "ethers/lib/utils"
 import {
   EIP1559TransactionRequest,
-  EVMNetwork,
+  sameNetwork,
   SignedEVMTransaction,
 } from "../../networks"
 import { EIP712TypedData, HexString } from "../../types"
@@ -23,9 +23,9 @@ import { ServiceCreatorFunction, ServiceLifecycleEvents } from "../types"
 import logger from "../../lib/logger"
 import { getOrCreateDB, LedgerAccount, LedgerDatabase } from "./db"
 import { ethersTransactionRequestFromEIP1559TransactionRequest } from "../chain/utils"
-import { ETH } from "../../constants"
+import { ETHEREUM } from "../../constants"
 import { normalizeEVMAddress } from "../../lib/utils"
-import { HIDE_IMPORT_LEDGER } from "../../features/features"
+import { AddressOnNetwork } from "../../accounts"
 
 enum LedgerType {
   UNKNOWN,
@@ -40,8 +40,7 @@ export const LedgerProductDatabase = {
   LEDGER_NANO_X: { productId: 0x4015 },
 }
 
-export const isLedgerSupported =
-  !HIDE_IMPORT_LEDGER && typeof navigator.usb === "object"
+export const isLedgerSupported = typeof navigator.usb === "object"
 
 const TestedProductId = (productId: number): boolean => {
   return Object.values(LedgerProductDatabase).some(
@@ -81,7 +80,7 @@ type Events = ServiceLifecycleEvents & {
   usbDeviceCount: number
 }
 
-export const idDerviationPath = "44'/60'/0'/0/0"
+export const idDerivationPath = "44'/60'/0'/0/0"
 
 async function deriveAddressOnLedger(path: string, eth: Eth) {
   const derivedIdentifiers = await eth.getAddress(path)
@@ -114,7 +113,7 @@ async function generateLedgerId(
     return [undefined, extensionDeviceType]
   }
 
-  const address = await deriveAddressOnLedger(idDerviationPath, eth)
+  const address = await deriveAddressOnLedger(idDerivationPath, eth)
 
   return [address, extensionDeviceType]
 }
@@ -205,7 +204,7 @@ export default class LedgerService extends BaseService<Events> {
         this.emitter.emit("ledgerAdded", {
           id: this.#currentLedgerId,
           type,
-          accountIDs: [idDerviationPath],
+          accountIDs: [idDerivationPath],
           metadata: {
             ethereumVersion: appData.version,
             isArbitraryDataSigningEnabled: appData.arbitraryDataEnabled !== 0,
@@ -321,7 +320,6 @@ export default class LedgerService extends BaseService<Events> {
   }
 
   async signTransaction(
-    network: EVMNetwork,
     transactionRequest: EIP1559TransactionRequest & { nonce: number },
     deviceID: string,
     path: string
@@ -397,8 +395,8 @@ export default class LedgerService extends BaseService<Events> {
 
           blockHash: null,
           blockHeight: null,
-          asset: ETH,
-          network,
+          asset: transactionRequest.network.baseAsset,
+          network: transactionRequest.network,
         }
 
         return signedTx
@@ -481,7 +479,14 @@ export default class LedgerService extends BaseService<Events> {
     }
   }
 
-  async signMessage(address: string, message: string): Promise<string> {
+  async signMessage(
+    { address, network }: AddressOnNetwork,
+    message: string
+  ): Promise<string> {
+    if (!sameNetwork(network, ETHEREUM)) {
+      throw new Error("Unsupported network for Ledger signing")
+    }
+
     if (!this.transport) {
       throw new Error("Uninitialized transport!")
     }

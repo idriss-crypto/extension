@@ -1,11 +1,16 @@
 import React, { ReactElement, useState } from "react"
 import {
   rejectTransactionSignature,
-  selectIsTransactionLoaded,
-  selectTransactionData,
   signTransaction,
 } from "@tallyho/tally-background/redux-slices/transaction-construction"
-import { getAccountTotal } from "@tallyho/tally-background/redux-slices/selectors"
+import {
+  selectIsTransactionLoaded,
+  selectTransactionData,
+} from "@tallyho/tally-background/redux-slices/selectors/transactionConstructionSelectors"
+import {
+  getAccountTotal,
+  selectCurrentNetwork,
+} from "@tallyho/tally-background/redux-slices/selectors"
 import {
   useBackgroundDispatch,
   useBackgroundSelector,
@@ -14,10 +19,12 @@ import {
 import SignTransactionContainer from "../components/SignTransaction/SignTransactionContainer"
 import SignTransactionInfoProvider from "../components/SignTransaction/SignTransactionInfoProvider"
 import SignTransactionPanelSwitcher from "../components/SignTransaction/SignTransactionPanelSwitcher"
+import SignTransactionPanelCombined from "../components/SignTransaction/SignTransactionPanelCombined"
 
 export default function SignTransaction(): ReactElement {
   const dispatch = useBackgroundDispatch()
   const transactionDetails = useBackgroundSelector(selectTransactionData)
+  const currentNetwork = useBackgroundSelector(selectCurrentNetwork)
 
   const isTransactionDataReady = useBackgroundSelector(
     selectIsTransactionLoaded
@@ -25,7 +32,10 @@ export default function SignTransaction(): ReactElement {
 
   const signerAccountTotal = useBackgroundSelector((state) => {
     if (typeof transactionDetails !== "undefined") {
-      return getAccountTotal(state, transactionDetails.from)
+      return getAccountTotal(state, {
+        address: transactionDetails.from,
+        network: currentNetwork,
+      })
     }
     return undefined
   })
@@ -37,15 +47,6 @@ export default function SignTransaction(): ReactElement {
   const isLocked = useIsSigningMethodLocked(signingMethod)
 
   if (isLocked) return <></>
-
-  if (
-    typeof transactionDetails === "undefined" ||
-    typeof signerAccountTotal === "undefined"
-  ) {
-    // TODO Some sort of unexpected state error if we end up here... Or do we
-    // go back in history? That won't work for dApp popovers though.
-    return <></>
-  }
 
   const handleReject = async () => {
     await dispatch(rejectTransactionSignature())
@@ -77,9 +78,17 @@ export default function SignTransaction(): ReactElement {
           handleReject={handleReject}
           detailPanel={infoBlock}
           reviewPanel={textualInfoBlock}
-          extraPanel={<SignTransactionPanelSwitcher />}
+          extraPanel={
+            title === "Contract interaction" ? (
+              <SignTransactionPanelCombined />
+            ) : (
+              <SignTransactionPanelSwitcher />
+            )
+          }
           isTransactionSigning={isTransactionSigning}
-          isArbitraryDataSigningRequired={!!transactionDetails.input}
+          isArbitraryDataSigningRequired={
+            !!(transactionDetails?.input ?? false)
+          }
         />
       )}
     </SignTransactionInfoProvider>

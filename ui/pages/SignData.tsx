@@ -41,13 +41,6 @@ export default function SignData(): ReactElement {
   const isLocked = useIsSigningMethodLocked(signingMethod)
   if (isLocked) return <></>
 
-  if (
-    typeof typedDataRequest === "undefined" ||
-    typeof signerAccountTotal === "undefined"
-  ) {
-    return <></>
-  }
-
   const handleConfirm = () => {
     if (typedDataRequest !== undefined) {
       if (signingMethod) {
@@ -55,11 +48,21 @@ export default function SignData(): ReactElement {
         setIsTransactionSigning(true)
       }
     }
+
+    // We need to send user to the previous page after signing data is completed
+    history.goBack()
   }
 
   const handleReject = async () => {
     await dispatch(rejectDataSignature())
     history.goBack()
+  }
+
+  const getTitle = () => {
+    if (typedDataRequest?.typedData.primaryType === "PermitAndTransferFrom") {
+      return "Authorize Deposit"
+    }
+    return `Sign ${typedDataRequest?.typedData.primaryType ?? "Message"}`
   }
 
   return (
@@ -68,7 +71,7 @@ export default function SignData(): ReactElement {
       confirmButtonLabel="Confirm"
       handleConfirm={handleConfirm}
       handleReject={handleReject}
-      title={`Sign ${typedDataRequest.typedData.primaryType ?? "Message"}`}
+      title={getTitle()}
       detailPanel={<SignDataDetailPanel />}
       reviewPanel={<SignDataDetailPanel />}
       isTransactionSigning={isTransactionSigning}

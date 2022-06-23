@@ -14,7 +14,15 @@ import {
   SwapQuoteRequest,
   fetchSwapQuote,
 } from "@tallyho/tally-background/redux-slices/0x-swap"
-import { selectCurrentAccountBalances } from "@tallyho/tally-background/redux-slices/selectors"
+import {
+  HIDE_SWAP_REWARDS,
+  HIDE_TOKEN_FEATURES,
+  SUPPORT_POLYGON,
+} from "@tallyho/tally-background/features"
+import {
+  selectCurrentAccountBalances,
+  selectCurrentNetwork,
+} from "@tallyho/tally-background/redux-slices/selectors"
 import {
   AnyAsset,
   FungibleAsset,
@@ -25,10 +33,11 @@ import {
 import { fixedPointNumberToString } from "@tallyho/tally-background/lib/fixed-point"
 import { AsyncThunkFulfillmentType } from "@tallyho/tally-background/redux-slices/utils"
 import logger from "@tallyho/tally-background/lib/logger"
-import { useHistory, useLocation } from "react-router-dom"
+import { useLocation } from "react-router-dom"
 import { normalizeEVMAddress } from "@tallyho/tally-background/lib/utils"
 import { CompleteAssetAmount } from "@tallyho/tally-background/redux-slices/accounts"
-import { selectDefaultNetworkFeeSettings } from "@tallyho/tally-background/redux-slices/transaction-construction"
+import { sameNetwork } from "@tallyho/tally-background/networks"
+import { selectDefaultNetworkFeeSettings } from "@tallyho/tally-background/redux-slices/selectors/transactionConstructionSelectors"
 import CorePage from "../components/Core/CorePage"
 import SharedAssetInput from "../components/Shared/SharedAssetInput"
 import SharedButton from "../components/Shared/SharedButton"
@@ -36,7 +45,15 @@ import SharedSlideUpMenu from "../components/Shared/SharedSlideUpMenu"
 import SwapQuote from "../components/Swap/SwapQuote"
 import SharedActivityHeader from "../components/Shared/SharedActivityHeader"
 import SwapTransactionSettingsChooser from "../components/Swap/SwapTransactionSettingsChooser"
-import { useBackgroundDispatch, useBackgroundSelector } from "../hooks"
+import {
+  useBackgroundDispatch,
+  useBackgroundSelector,
+  useSkipFirstRenderEffect,
+} from "../hooks"
+import SwapRewardsCard from "../components/Swap/SwapRewardsCard"
+import SharedIcon from "../components/Shared/SharedIcon"
+import SharedBanner from "../components/Shared/SharedBanner"
+import t from "../utils/i18n"
 
 // FIXME Unify once asset similarity code is unified.
 function isSameAsset(asset1: AnyAsset, asset2: AnyAsset) {
@@ -70,7 +87,11 @@ export default function Swap(): ReactElement {
     { symbol: string; contractAddress?: string } | undefined
   >()
 
+  const currentNetwork = useBackgroundSelector(selectCurrentNetwork)
+
   const accountBalances = useBackgroundSelector(selectCurrentAccountBalances)
+
+  const selectedNetwork = useBackgroundSelector(selectCurrentNetwork)
 
   // TODO We're special-casing ETH here in an odd way. Going forward, we should
   // filter by current chain and better handle network-native base assets
@@ -82,7 +103,7 @@ export default function Swap(): ReactElement {
         SmartContractFungibleAsset | FungibleAsset
       > =>
         isSmartContractFungibleAsset(assetAmount.asset) ||
-        assetAmount.asset.symbol === "ETH"
+        assetAmount.asset.symbol === currentNetwork.baseAsset.symbol
     ) ?? []
 
   const {
@@ -130,17 +151,41 @@ export default function Swap(): ReactElement {
     undefined
   )
 
+  useSkipFirstRenderEffect(() => {
+    if (SUPPORT_POLYGON) {
+      setSellAsset(undefined)
+      setBuyAsset(undefined)
+      setSellAmount("")
+      setBuyAmount("")
+    }
+  }, [currentNetwork.chainID, dispatch])
+
   const buyAssets = useBackgroundSelector((state) => {
     // Some type massaging needed to remind TypeScript how these types fit
     // together.
     const knownAssets: AnyAsset[] = state.assets
     return knownAssets.filter(
-      (asset): asset is SmartContractFungibleAsset | FungibleAsset =>
-        (isSmartContractFungibleAsset(asset) ||
-          // Explicity add ETH even though it is not an ERC-20 token
-          // @TODO change as part of multi-network refactor.
-          (isFungibleAsset(asset) && asset.symbol === "ETH")) &&
-        asset.symbol !== sellAsset?.symbol
+      (asset): asset is SmartContractFungibleAsset | FungibleAsset => {
+        // We don't want to buy the same asset we're selling.
+        if (asset.symbol === sellAsset?.symbol) {
+          return false
+        }
+
+        if (isSmartContractFungibleAsset(asset)) {
+          if (sameNetwork(asset.homeNetwork, currentNetwork)) {
+            return true
+          }
+        }
+        if (
+          // Explicitly add a network's base asset.
+          isFungibleAsset(asset) &&
+          // Just checking on symbol is a pretty weak check - can we do better?
+          asset.symbol === currentNetwork.baseAsset.symbol
+        ) {
+          return true
+        }
+        return false
+      }
     )
   })
 
@@ -228,18 +273,15 @@ export default function Swap(): ReactElement {
 
   const approveAsset = async () => {
     if (typeof sellAsset === "undefined") {
-      logger.error("Attempting to approve transfer without a sell asset.")
+      logger.error(t("swapErrorNoSellAsset"))
       return
     }
     if (typeof approvalTarget === "undefined") {
-      logger.error("Attempting to approve transfer without an approval target.")
+      logger.error(t("swapErrorNoApprovalTarget"))
       return
     }
     if (!isSmartContractFungibleAsset(sellAsset)) {
-      logger.error(
-        "Attempting to approve transfer of a non-contract asset.",
-        sellAsset
-      )
+      logger.error(t("swapErrorNonContractAsset"), sellAsset)
       return
     }
 
@@ -294,6 +336,7 @@ export default function Swap(): ReactElement {
             : { buyAmount: amount },
         slippageTolerance: swapTransactionSettings.slippageTolerance,
         gasPrice: swapTransactionSettings.networkSettings.values.maxFeePerGas,
+        network: selectedNetwork,
       }
 
       // If there's a different quote in progress, reset all loading states as
@@ -332,6 +375,18 @@ export default function Swap(): ReactElement {
           return
         }
 
+        if (
+          swapTransactionSettings.networkSettings.gasLimit !== BigInt(quote.gas)
+        ) {
+          setSwapTransactionSettings({
+            ...swapTransactionSettings,
+            networkSettings: {
+              ...swapTransactionSettings.networkSettings,
+              gasLimit: BigInt(quote.gas),
+              suggestedGasLimit: BigInt(quote.estimatedGas),
+            },
+          })
+        }
         setNeedsApproval(quoteNeedsApproval)
         setApprovalTarget(quote.allowanceTarget)
 
@@ -354,32 +409,32 @@ export default function Swap(): ReactElement {
         }
       }
     },
-    [
-      buyAsset,
-      dispatch,
-      sellAsset,
-      swapTransactionSettings.networkSettings.values.maxFeePerGas,
-      swapTransactionSettings.slippageTolerance,
-    ]
+    [buyAsset, dispatch, sellAsset, swapTransactionSettings, selectedNetwork]
   )
 
   const updateSellAsset = useCallback(
     (asset: SmartContractFungibleAsset | FungibleAsset) => {
       setSellAsset(asset)
-      // Updating the sell asset quotes the new sell asset against the existing
-      // buy amount.
-      updateSwapData("buy", buyAmount, asset)
+
+      if (buyAsset && buyAmount !== "") {
+        // Updating the sell asset quotes the new sell asset against the existing
+        // buy amount.
+        updateSwapData("buy", buyAmount, asset)
+      }
     },
-    [buyAmount, updateSwapData]
+    [buyAmount, buyAsset, updateSwapData]
   )
   const updateBuyAsset = useCallback(
     (asset: SmartContractFungibleAsset | FungibleAsset) => {
       setBuyAsset(asset)
-      // Updating the buy asset quotes the new buy asset against the existing
-      // sell amount.
-      updateSwapData("sell", sellAmount, asset)
+
+      if (sellAsset && sellAmount !== "") {
+        // Updating the buy asset quotes the new buy asset against the existing
+        // sell amount.
+        updateSwapData("sell", sellAmount, asset)
+      }
     },
-    [sellAmount, updateSwapData]
+    [sellAmount, sellAsset, updateSwapData]
   )
 
   const flipSwap = useCallback(() => {
@@ -439,7 +494,38 @@ export default function Swap(): ReactElement {
           )}
         </SharedSlideUpMenu>
         <div className="standard_width swap_wrap">
-          <SharedActivityHeader label="Swap Assets" activity="swap" />
+          <div className="header">
+            <SharedActivityHeader label={t("swapTitle")} activity="swap" />
+            {HIDE_TOKEN_FEATURES ? (
+              <></>
+            ) : (
+              !HIDE_SWAP_REWARDS && (
+                // TODO: Add onClick function after design is ready
+                <SharedIcon
+                  icon="cog@2x.png"
+                  width={20}
+                  color="var(--green-60)"
+                  hoverColor="#fff"
+                  customStyles="margin: 17px 0 25px;"
+                />
+              )
+            )}
+          </div>
+          {HIDE_TOKEN_FEATURES ? (
+            <></>
+          ) : (
+            HIDE_SWAP_REWARDS && (
+              <SharedBanner
+                id="swap_rewards"
+                canBeClosed
+                icon="notif-announcement"
+                iconColor="var(--link)"
+                customStyles="margin-bottom: 16px"
+              >
+                Swap rewards coming soon
+              </SharedBanner>
+            )
+          )}
           <div className="form">
             <div className="form_input">
               <SharedAssetInput<SmartContractFungibleAsset | FungibleAsset>
@@ -454,7 +540,7 @@ export default function Swap(): ReactElement {
                     updateSwapData("sell", newAmount)
                   }
                 }}
-                label="Swap from:"
+                label={t("swapFrom")}
               />
             </div>
             <button className="icon_change" type="button" onClick={flipSwap}>
@@ -470,19 +556,23 @@ export default function Swap(): ReactElement {
                 showMaxButton={false}
                 onAssetSelect={updateBuyAsset}
                 onAmountChange={(newAmount, error) => {
-                  setBuyAmount(buyAmount)
+                  setBuyAmount(newAmount)
                   if (typeof error === "undefined") {
                     updateSwapData("buy", newAmount)
                   }
                 }}
-                label="Swap to:"
+                label={t("swapTo")}
               />
             </div>
             <div className="settings_wrap">
-              <SwapTransactionSettingsChooser
-                swapTransactionSettings={swapTransactionSettings}
-                onSwapTransactionSettingsSave={setSwapTransactionSettings}
-              />
+              {HIDE_SWAP_REWARDS ? (
+                <SwapTransactionSettingsChooser
+                  swapTransactionSettings={swapTransactionSettings}
+                  onSwapTransactionSettingsSave={setSwapTransactionSettings}
+                />
+              ) : (
+                <SwapRewardsCard />
+              )}
             </div>
             <div className="footer standard_width_padded">
               {
@@ -515,12 +605,15 @@ export default function Swap(): ReactElement {
                     isDisabled={
                       typeof latestQuoteRequest.current === "undefined" ||
                       sellAmountLoading ||
-                      buyAmountLoading
+                      buyAmountLoading ||
+                      !sellAsset ||
+                      !sellAmount ||
+                      !buyAsset
                     }
                     onClick={getFinalQuote}
                     showLoadingOnClick={!confirmationMenu}
                   >
-                    Get final quote
+                    {t("swapGetFinalQuote")}
                   </SharedButton>
                 )
               }
@@ -532,6 +625,11 @@ export default function Swap(): ReactElement {
         {`
           .swap_wrap {
             margin-top: -9px;
+          }
+          .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
           }
           .network_fee_group {
             display: flex;
@@ -560,7 +658,6 @@ export default function Swap(): ReactElement {
             display: flex;
             justify-content: center;
             margin-top: 24px;
-            padding-bottom: 20px;
           }
           .total_label {
             width: 33px;
@@ -585,7 +682,7 @@ export default function Swap(): ReactElement {
             margin-top: -5px;
             margin-bottom: -32px;
             position: relative;
-
+            z-index: 1;
             font-size: 0;
           }
           .settings_wrap {

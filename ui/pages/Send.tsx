@@ -1,5 +1,4 @@
-import React, { ReactElement, useCallback, useEffect, useState } from "react"
-import { isAddress } from "@ethersproject/address"
+import React, { ReactElement, useCallback, useState } from "react"
 import {
   selectCurrentAccount,
   selectCurrentAccountBalances,
@@ -7,9 +6,9 @@ import {
 } from "@tallyho/tally-background/redux-slices/selectors"
 import {
   NetworkFeeSettings,
-  selectEstimatedFeesPerGas,
   setFeeType,
 } from "@tallyho/tally-background/redux-slices/transaction-construction"
+import { selectEstimatedFeesPerGas } from "@tallyho/tally-background/redux-slices/selectors/transactionConstructionSelectors"
 import {
   FungibleAsset,
   isFungibleAssetAmount,
@@ -26,15 +25,20 @@ import {
 import { CompleteAssetAmount } from "@tallyho/tally-background/redux-slices/accounts"
 import { enrichAssetAmountWithMainCurrencyValues } from "@tallyho/tally-background/redux-slices/utils/asset-utils"
 import { useHistory, useLocation } from "react-router-dom"
+import classNames from "classnames"
 import NetworkSettingsChooser from "../components/NetworkFees/NetworkSettingsChooser"
 import SharedAssetInput from "../components/Shared/SharedAssetInput"
 import SharedBackButton from "../components/Shared/SharedBackButton"
 import SharedButton from "../components/Shared/SharedButton"
-import { useBackgroundDispatch, useBackgroundSelector } from "../hooks"
+import {
+  useAddressOrNameValidation,
+  useBackgroundDispatch,
+  useBackgroundSelector,
+} from "../hooks"
 import SharedSlideUpMenu from "../components/Shared/SharedSlideUpMenu"
 import FeeSettingsButton from "../components/NetworkFees/FeeSettingsButton"
-import {checkIfStringIsValidIdrissName} from "@tallyho/tally-background/lib/utils";
-import {ETHEREUM} from "@tallyho/tally-background/constants/networks"
+import SharedLoadingSpinner from "../components/Shared/SharedLoadingSpinner"
+import t from "../utils/i18n"
 import selectResolvedIdrissAddress from "@tallyho/tally-background/redux-slices/selectors/idrissSelectors";
 import {
   resolveIdrissAddress, setResolvedAddress
@@ -45,7 +49,9 @@ export default function Send(): ReactElement {
   const [selectedAsset, setSelectedAsset] = useState<FungibleAsset>(
     location.state ?? ETH
   )
-  const [destinationAddress, setDestinationAddress] = useState("")
+  const [destinationAddress, setDestinationAddress] = useState<
+    string | undefined
+  >(undefined)
   const [amount, setAmount] = useState("")
   const [gasLimit, setGasLimit] = useState<bigint | undefined>(undefined)
   const [isSendingTransactionRequest, setIsSendingTransactionRequest] =
@@ -131,7 +137,7 @@ export default function Send(): ReactElement {
   const assetAmount = assetAmountFromForm()
 
   const sendTransactionRequest = useCallback(async () => {
-    if (assetAmount === undefined) {
+    if (assetAmount === undefined || destinationAddress === undefined) {
       return
     }
 
@@ -169,20 +175,28 @@ export default function Send(): ReactElement {
     setNetworkSettingsModalOpen(false)
   }
 
+  const {
+    errorMessage: addressErrorMessage,
+    isValidating: addressIsValidating,
+    handleInputChange: handleAddressChange,
+  } = useAddressOrNameValidation((value) =>
+    setDestinationAddress(value?.address)
+  )
+
   return (
     <>
       <div className="standard_width">
         <div className="back_button_wrap">
-          <SharedBackButton/>
+          <SharedBackButton path="/" />
         </div>
         <h1 className="header">
-          <span className="icon_activity_send_medium"/>
-          <div className="title">Send Asset</div>
+          <span className="icon_activity_send_medium" />
+          <div className="title">{t("walletSendAsset")}</div>
         </h1>
         <div className="form">
           <div className="form_input">
             <SharedAssetInput
-              label="Asset / Amount"
+              label={t("walletAssetAmount")}
               onAssetSelect={setSelectedAsset}
               assetsAndAmounts={fungibleAssetAmounts}
               onAmountChange={(value, errorMessage) => {
@@ -201,14 +215,29 @@ export default function Send(): ReactElement {
             </div>
           </div>
           <div className="form_input send_to_field">
-            <label htmlFor="send_address">Send To:</label>
+            <label htmlFor="send_address">{t("walletSendTo")}</label>
             <input
               id="send_address"
               type="text"
               placeholder="0x..."
               spellCheck={false}
-              onChange={(event) => handleAddressInputChange(event.target.value)}
+              onChange={(event) => handleAddressChange(event.target.value)}
+              className={classNames({
+                error: addressErrorMessage !== undefined,
+              })}
             />
+            {addressIsValidating ? (
+              <p className="validating">
+                <SharedLoadingSpinner />
+              </p>
+            ) : (
+              <></>
+            )}
+            {addressErrorMessage !== undefined ? (
+              <p className="error">{addressErrorMessage}</p>
+            ) : (
+              <></>
+            )}
           </div>
           {Object.values(resolvedIdrissAddress.allAddresses).length>0 &&resolvedIdrissAddress.name==lastInputValue ?Object.entries(resolvedIdrissAddress.allAddresses).map(([key, address]) => {
             let className='addressSelection '+(address==destinationAddress?'isActive':'')
@@ -227,7 +256,7 @@ export default function Send(): ReactElement {
             />
           </SharedSlideUpMenu>
           <div className="network_fee">
-            <p>Estimated network fee</p>
+            <p>{t("walletEstimatedFee")}</p>
             <FeeSettingsButton
               onClick={() => setNetworkSettingsModalOpen(true)}
             />
@@ -239,14 +268,14 @@ export default function Send(): ReactElement {
               size="large"
               isDisabled={
                 Number(amount) === 0 ||
-                !isAddress(destinationAddress) ||
+                destinationAddress === undefined ||
                 hasError
               }
               onClick={sendTransactionRequest}
               isFormSubmit
               isLoading={isSendingTransactionRequest}
             >
-              Send
+              {t("walletSendButton")}
             </SharedButton>
           </div>
         </div>
@@ -329,6 +358,23 @@ export default function Send(): ReactElement {
             border-radius: 4px;
             background-color: var(--green-95);
             padding: 0px 16px;
+          }
+          input#send_address ~ .error {
+            color: var(--error);
+            font-weight: 500;
+            font-size: 14px;
+            line-height: 20px;
+            align-self: flex-end;
+            text-align: end;
+            margin-top: -25px;
+            margin-right: 15px;
+            margin-bottom: 5px;
+          }
+          input#send_address ~ .validating {
+            margin-top: -50px;
+            margin-bottom: 22px;
+            margin-right: 15px;
+            align-self: flex-end;
           }
           .send_footer {
             display: flex;

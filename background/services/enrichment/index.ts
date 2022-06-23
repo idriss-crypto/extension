@@ -1,13 +1,15 @@
 import { normalizeHexAddress } from "@tallyho/hd-keyring"
 import {
+  AnyEVMBlock,
+  AnyEVMTransaction,
+  EIP1559TransactionRequest,
+  EVMLog,
+  EVMNetwork,
+} from "../../networks"
+import {
   SmartContractFungibleAsset,
   isSmartContractFungibleAsset,
 } from "../../assets"
-import {
-  AnyEVMTransaction,
-  EIP1559TransactionRequest,
-  EVMNetwork,
-} from "../../networks"
 import { enrichAssetAmountWithDecimalValues } from "../../redux-slices/utils/asset-utils"
 
 import { parseERC20Tx, parseLogsForERC20Transfers } from "../../lib/erc20"
@@ -26,8 +28,14 @@ import {
   EnrichedSignTypedDataRequest,
 } from "./types"
 import { SignTypedDataRequest } from "../../utils/signing"
-import { enrichEIP2612SignTypedDataRequest, isEIP2612TypedData } from "./utils"
+import {
+  enrichEIP2612SignTypedDataRequest,
+  getDistinctRecipentAddressesFromERC20Logs,
+  isEIP2612TypedData,
+} from "./utils"
 import { ETHEREUM } from "../../constants"
+import { parseLogsForWrappedDepositsAndWithdrawals } from "../../lib/wrappedAsset"
+import { isDefined, isFulfilledPromise } from "../../lib/utils/type-guards"
 
 export * from "./types"
 
@@ -104,17 +112,43 @@ export default class EnrichmentService extends BaseService<Events> {
     network: EVMNetwork,
     transaction:
       | AnyEVMTransaction
-      | (Partial<EIP1559TransactionRequest> & { from: string }),
+      | (Partial<EIP1559TransactionRequest> & {
+          from: string
+          blockHash?: string
+        }),
     desiredDecimals: number
   ): Promise<TransactionAnnotation | undefined> {
     let txAnnotation: TransactionAnnotation | undefined
 
     const resolvedTime = Date.now()
+    let block: AnyEVMBlock | undefined
+
+    let hasInsufficientFunds = false
+
+    const { gasLimit, maxFeePerGas, maxPriorityFeePerGas, blockHash } =
+      transaction
+
+    if (gasLimit && maxFeePerGas && maxPriorityFeePerGas) {
+      const gasFee = gasLimit * (maxFeePerGas + maxPriorityFeePerGas)
+      const {
+        assetAmount: { amount: baseAssetBalance },
+      } = await this.chainService.getLatestBaseAccountBalance({
+        address: transaction.from,
+        network,
+      })
+      hasInsufficientFunds =
+        gasFee + (transaction.value ?? 0n) > baseAssetBalance
+    }
+
+    if (blockHash) {
+      block = await this.chainService.getBlockData(network, blockHash)
+    }
 
     if (typeof transaction.to === "undefined") {
       // A missing recipient means a contract deployment.
       txAnnotation = {
         timestamp: resolvedTime,
+        blockTimestamp: block?.timestamp,
         type: "contract-deployment",
       }
     } else if (
@@ -122,7 +156,10 @@ export default class EnrichmentService extends BaseService<Events> {
       transaction.input === "0x" ||
       typeof transaction.input === "undefined"
     ) {
-      const toName = await this.nameService.lookUpName(transaction.to, ETHEREUM)
+      const { name: toName } = (await this.nameService.lookUpName({
+        address: transaction.to,
+        network,
+      })) ?? { name: undefined }
 
       // This is _almost certainly_ not a contract interaction, move on. Note that
       // a simple ETH send to a contract address can still effectively be a
@@ -134,10 +171,11 @@ export default class EnrichmentService extends BaseService<Events> {
       if (typeof transaction.value !== "undefined") {
         txAnnotation = {
           timestamp: resolvedTime,
+          blockTimestamp: block?.timestamp,
           type: "asset-transfer",
           senderAddress: transaction.from,
           recipientName: toName,
-          recipientAddress: transaction.to, // TODO ingest address
+          recipientAddress: transaction.to,
           assetAmount: enrichAssetAmountWithDecimalValues(
             {
               asset: network.baseAsset,
@@ -150,6 +188,7 @@ export default class EnrichmentService extends BaseService<Events> {
         // Fall back on a standard contract interaction.
         txAnnotation = {
           timestamp: resolvedTime,
+          blockTimestamp: block?.timestamp,
           type: "contract-interaction",
           contractName: toName,
         }
@@ -174,18 +213,19 @@ export default class EnrichmentService extends BaseService<Events> {
         erc20Tx &&
         (erc20Tx.name === "transfer" || erc20Tx.name === "transferFrom")
       ) {
-        const toName = await this.nameService.lookUpName(
-          erc20Tx.args.to,
-          ETHEREUM
-        )
+        const { name: toName } = (await this.nameService.lookUpName({
+          address: erc20Tx.args.to,
+          network,
+        })) ?? { name: undefined }
 
         // We have an ERC-20 transfer
         txAnnotation = {
           timestamp: resolvedTime,
+          blockTimestamp: block?.timestamp,
           type: "asset-transfer",
           transactionLogoURL,
           senderAddress: erc20Tx.args.from ?? transaction.from,
-          recipientAddress: erc20Tx.args.to, // TODO ingest address
+          recipientAddress: erc20Tx.args.to,
           recipientName: toName,
           assetAmount: enrichAssetAmountWithDecimalValues(
             {
@@ -195,21 +235,26 @@ export default class EnrichmentService extends BaseService<Events> {
             desiredDecimals
           ),
         }
+        // Warn if we're sending the token to its own contract
+        if (sameEVMAddress(erc20Tx.args.to, transaction.to)) {
+          txAnnotation.warnings = ["send-to-token"]
+        }
       } else if (
         matchingFungibleAsset &&
         erc20Tx &&
         erc20Tx.name === "approve"
       ) {
-        const spenderName = await this.nameService.lookUpName(
-          erc20Tx.args.spender,
-          ETHEREUM
-        )
+        const { name: spenderName } = (await this.nameService.lookUpName({
+          address: erc20Tx.args.spender,
+          network,
+        })) ?? { name: undefined }
 
         txAnnotation = {
           timestamp: resolvedTime,
+          blockTimestamp: block?.timestamp,
           type: "asset-approval",
           transactionLogoURL,
-          spenderAddress: erc20Tx.args.spender, // TODO ingest address
+          spenderAddress: erc20Tx.args.spender,
           spenderName,
           assetAmount: enrichAssetAmountWithDecimalValues(
             {
@@ -220,14 +265,15 @@ export default class EnrichmentService extends BaseService<Events> {
           ),
         }
       } else {
-        const toName = await this.nameService.lookUpName(
-          transaction.to,
-          ETHEREUM
-        )
+        const { name: toName } = (await this.nameService.lookUpName({
+          address: transaction.to,
+          network,
+        })) ?? { name: undefined }
 
         // Fall back on a standard contract interaction.
         txAnnotation = {
           timestamp: resolvedTime,
+          blockTimestamp: block?.timestamp,
           type: "contract-interaction",
           // Include the logo URL if we resolve it even if the interaction is
           // non-specific; the UI can choose to use it or not, but if we know the
@@ -240,69 +286,12 @@ export default class EnrichmentService extends BaseService<Events> {
 
     // Look up logs and resolve subannotations, if available.
     if ("logs" in transaction && typeof transaction.logs !== "undefined") {
-      const assets = await this.indexingService.getCachedAssets(network)
-
-      const erc20TransferLogs = parseLogsForERC20Transfers(transaction.logs)
-
-      // Look up transfer log names, then flatten to an address -> name map.
-      const namesByAddress = Object.fromEntries(
-        (
-          await Promise.allSettled(
-            [
-              ...new Set(
-                ...erc20TransferLogs.map(
-                  ({ recipientAddress }) => recipientAddress
-                )
-              ),
-            ].map(
-              async (address) =>
-                [
-                  normalizeEVMAddress(address),
-                  await this.nameService.lookUpName(address, ETHEREUM),
-                ] as const
-            )
-          )
-        )
-          .filter(
-            (result): result is PromiseFulfilledResult<[string, string]> =>
-              result.status === "fulfilled" && result.value[1] !== undefined
-          )
-          .map(({ value }) => value)
-      )
-
-      const subannotations = erc20TransferLogs.flatMap<TransactionAnnotation>(
-        ({ contractAddress, amount, senderAddress, recipientAddress }) => {
-          // See if the address matches a fungible asset.
-          const matchingFungibleAsset = assets.find(
-            (asset): asset is SmartContractFungibleAsset =>
-              isSmartContractFungibleAsset(asset) &&
-              sameEVMAddress(asset.contractAddress, contractAddress)
-          )
-
-          // Try to find a resolved name for the recipient; we should probably
-          // do this for the sender as well, but one thing at a time.
-          const recipientName =
-            namesByAddress[normalizeEVMAddress(recipientAddress)]
-
-          return typeof matchingFungibleAsset !== "undefined"
-            ? [
-                {
-                  type: "asset-transfer",
-                  assetAmount: enrichAssetAmountWithDecimalValues(
-                    {
-                      asset: matchingFungibleAsset,
-                      amount,
-                    },
-                    desiredDecimals
-                  ),
-                  senderAddress,
-                  recipientAddress,
-                  recipientName,
-                  timestamp: resolvedTime,
-                },
-              ]
-            : []
-        }
+      const subannotations = await this.annotationsFromLogs(
+        transaction.logs,
+        network,
+        desiredDecimals,
+        resolvedTime,
+        block
       )
 
       if (subannotations.length > 0) {
@@ -310,7 +299,85 @@ export default class EnrichmentService extends BaseService<Events> {
       }
     }
 
+    if (hasInsufficientFunds) {
+      txAnnotation.warnings ??= []
+      txAnnotation.warnings.push("insufficient-funds")
+    }
+
     return txAnnotation
+  }
+
+  async annotationsFromLogs(
+    logs: EVMLog[],
+    network: EVMNetwork,
+    desiredDecimals: number,
+    resolvedTime: number,
+    block: AnyEVMBlock | undefined
+  ): Promise<TransactionAnnotation[]> {
+    const assets = await this.indexingService.getCachedAssets(network)
+
+    const tokenTransferLogs = [
+      ...parseLogsForERC20Transfers(logs),
+      ...parseLogsForWrappedDepositsAndWithdrawals(logs),
+    ]
+
+    // Look up transfer log names, then flatten to an address -> name map.
+    const namesByAddress = Object.fromEntries(
+      (
+        await Promise.allSettled(
+          getDistinctRecipentAddressesFromERC20Logs(tokenTransferLogs).map(
+            async (address) =>
+              [
+                normalizeEVMAddress(address),
+                (await this.nameService.lookUpName({ address, network }))?.name,
+              ] as const
+          )
+        )
+      )
+        .filter(isFulfilledPromise)
+        .map(({ value }) => value)
+        .filter(([, name]) => isDefined(name))
+    )
+
+    const subannotations = tokenTransferLogs.flatMap<TransactionAnnotation>(
+      ({ contractAddress, amount, senderAddress, recipientAddress }) => {
+        // See if the address matches a fungible asset.
+        const matchingFungibleAsset = assets.find(
+          (asset): asset is SmartContractFungibleAsset =>
+            isSmartContractFungibleAsset(asset) &&
+            sameEVMAddress(asset.contractAddress, contractAddress)
+        )
+
+        if (!matchingFungibleAsset) {
+          return []
+        }
+
+        // Try to find a resolved name for the recipient; we should probably
+        // do this for the sender as well, but one thing at a time.
+        const recipientName =
+          namesByAddress[normalizeEVMAddress(recipientAddress)]
+
+        return [
+          {
+            type: "asset-transfer",
+            assetAmount: enrichAssetAmountWithDecimalValues(
+              {
+                asset: matchingFungibleAsset,
+                amount,
+              },
+              desiredDecimals
+            ),
+            senderAddress,
+            recipientAddress,
+            recipientName,
+            timestamp: resolvedTime,
+            blockTimestamp: block?.timestamp,
+          },
+        ]
+      }
+    )
+
+    return subannotations
   }
 
   async enrichTransactionSignature(
@@ -320,6 +387,7 @@ export default class EnrichmentService extends BaseService<Events> {
   ): Promise<EnrichedEVMTransactionSignatureRequest> {
     const enrichedTxSignatureRequest = {
       ...transaction,
+      network,
       annotation: await this.resolveTransactionAnnotation(
         network,
         transaction,
